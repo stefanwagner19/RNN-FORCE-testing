@@ -7,6 +7,7 @@
 
 
 import numpy as np
+from scipy import sparse
 
 
 class Subnetwork(object):
@@ -43,7 +44,9 @@ class Subnetwork(object):
 		self.r = self.r_0.copy()
 
 		# initialize internal connection matrix J
-		self.J = np.random.normal(self.mu_J, self.var_J, (self.N_neurons, self.N_neurons))
+		# self.J = np.random.normal(self.mu_J, self.var_J, (self.N_neurons, self.N_neurons))
+		self.J = np.array(sparse.random(self.N_neurons, self.N_neurons, 1, data_rvs=np.random.randn).todense()) \
+					* self.g/np.sqrt(self.N_neurons)
 		# np.fill_diagonal(self.J, 0.0)
 
 		# initialize output weights w
@@ -59,8 +62,10 @@ class Subnetwork(object):
 
 
 	def reset_activity(self):
-		self.x = self.x_0
-		self.r = self.r_0
+		# self.x = self.x_0
+		# self.r = self.r_0
+		self.x = np.random.randn(self.N_neurons,)
+		self.r = np.tanh(self.x)
 
 
 	def get_error_term(self, t, f_out=None, h=None):
@@ -69,13 +74,13 @@ class Subnetwork(object):
 		# calculate activations caused by feedback
 		if f_out != None:
 			for i in range(len(f_out)):
-				sum_out += np.dot(self.u_out, f_out[i](t)).flatten()
+				sum_out += np.dot(self.u_out[i], f_out[i](t)).flatten()
 
 		sum_h = np.zeros((self.N_neurons))
 		# calculate activations caused by hints
 		if h != None:
 			for i in range(len(h)):
-				sum_h += np.dot(self.u_h, h[i](t)).flatten()
+				sum_h += np.dot(self.u_h[i], h[i](t)).flatten()
 
 		return np.dot(self.J, self.r) + sum_out + sum_h
 
@@ -87,7 +92,6 @@ class Subnetwork(object):
 			sum_f += np.dot(self.u_in[i], f[i](t)).flatten()
 
 		dxdt = (-self.x + sum_f + self.get_error_term(t, f_out, h)) / self.tau
-
 		self.x += (dxdt*dt)
 		self.r = np.tanh(self.x)
 
@@ -136,6 +140,7 @@ class RNN(object):
 		self.var_wg = var_wg
 
 		# initialize matrices P for training
+		self.P = np.identity(N_neurons)/alpha
 		self.P_i = np.identity(N_neurons)/alpha
 		self.P_w = np.identity(N_neurons)/alpha
 
@@ -154,6 +159,49 @@ class RNN(object):
 
 	def step(self, f, t):
 		return self.Per.step(f, t)
+
+
+	def train_once(self, dur, f, f_out, h, p, dt):
+		# self.Gen.reset_activity()
+		# self.Per.reset_activity()
+
+		for t in range(dur):
+
+			if np.random.rand() < (1/p):
+			
+				J_err = self.Per.get_error_term(t) - self.Gen.get_error_term(t, f_out=f_out, h=h)
+
+				w_err = np.zeros((self.N_outputs))
+
+				y = np.zeros((self.N_outputs, self.output_dims))
+
+				for i in range(self.N_outputs):
+					y[i] = np.dot(self.Per.w[i], self.Per.r)
+
+				for i in range(self.N_outputs):
+					w_err[i] = y[i] - f_out[i](t)
+
+
+				denom = 1 + np.dot(np.transpose(self.Per.r), np.dot(self.P, self.Per.r))
+				dPdt = -1 * np.outer(np.dot(self.P, self.Per.r), np.dot(np.transpose(self.Per.r), self.P)) / denom
+				self.P += dPdt*dt
+
+				dJdt = -1 * np.outer(np.transpose(J_err), np.dot(self.P, self.Per.r))
+				self.Per.J += dJdt*dt
+
+				dwdt = np.zeros((self.N_outputs, self.output_dims, self.N_neurons))
+				x = np.dot(self.P, self.Per.r)
+
+				for i in range(self.N_outputs):
+					dwdt[i] = -1 * np.dot(np.transpose(w_err[i]), x)
+
+				self.Per.w += dwdt*dt
+
+			self.Gen.step(f, t, f_out=f_out, h=h, dt=dt)
+			self.Per.step(f, t, dt=dt)
+
+
+
 
 
 	def internal_training(self, dur, f, f_out, h=None, dt=1):
@@ -213,7 +261,7 @@ class RNN(object):
 			for i in range(self.N_outputs):
 				dwdt[i] = -1 * np.dot(np.transpose(e_minus[i]), x)
 
-			self.Per.w += dwdt*dt
+			self.Per.w += (dwdt*dt)
 
 			e_plus = np.zeros((self.N_outputs))
 
