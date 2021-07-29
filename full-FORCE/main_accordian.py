@@ -1,7 +1,7 @@
 # main_accordian.py - main script for learning accordian function
 #
 #	created: 7/21/2021
-#	last change: 7/21/2021
+#	last change: 7/29/2021
 
 
 from network import *
@@ -25,34 +25,27 @@ N_hints = 1
 hint_dims = 1
 
 # target-generating parameters
-gg = 1
+gg = 1.5
 tau_g = 10
-mu_Jg = 0
-# var_Jg = (gg**2)/N_neurons
 var_Jg = gg/np.sqrt(N_neurons)
 mu_wg = 0
-# var_wg = (1/N_neurons)**0.5
 var_wg = 1
 
 # task-performing parameters
-gp = 1
+gp = 1.5
 tau_p = 10
-mu_Jp = 0
-# var_Jp = (gp**2)/N_neurons
 var_Jp = gp/np.sqrt(N_neurons)
 mu_wp = 0
-# var_wp = (1/N_neurons)**0.5
 var_wp = 1
 
 # training parameters
-dur = 15000
-trials_i = 10
-trials_w = 10
+dur =2100
+trials = 100
 
 #plotting parameters
-snapshot_len = 300
-plot_int_i = 1
-plot_int_w = 5
+init_trials = 20
+snapshot_len = 2100
+plot_int = 100
 
 
 N = RNN(N_neurons=N_neurons, \
@@ -65,32 +58,35 @@ N = RNN(N_neurons=N_neurons, \
 		gp=gp, \
 		tau_g=tau_g, \
 		tau_p=tau_p, \
-		mu_Jg=mu_Jg, \
-		mu_Jp=mu_Jp, \
 		var_Jg=var_Jg, \
 		var_Jp=var_Jp, \
 		mu_wg=mu_wg, \
 		mu_wp=mu_wp, \
 		var_wg=var_wg, \
 		var_wp=var_wp, \
+		hints=False, \
 		N_hints=N_hints, \
 		hint_dims=hint_dims)
 
 # parameters for accordian function
-target_T = 300
+target_T = 2100
 upper = 6
 lower = 2
 
-f = [input_spike]
-f_out = [Accordian(target_T, upper, lower)]
+f = np.zeros((dur, N_inputs, input_dims))
+
+for t in range(dur):
+	f[t][0][0] = input_spike(t)
+
+accord = Accordian(target_T, upper, lower)
+f_out = np.zeros((dur, N_outputs, output_dims))
+
+for t in range(f_out.shape[0]):
+	f_out[t][0][0] = accord(t)
+
 h = None 
 
-# training(Network=N, f=f, f_out=f_out, h=h, trials_i=trials_i, trials_w=trials_w, \
-# 			snapshot_len=snapshot_len, plot_int_i=plot_int_i, plot_int_w=plot_int_w, \
-# 			dur=dur, dt=dt)
-
-trials = 100
-plot_int = 5
-
-train2(Network=N, f=f, f_out=f_out, h=h, trials=trials, snapshot_len=snapshot_len, \
+training(Network=N, f=f, f_out=f_out, h=h, trials=trials, snapshot_len=snapshot_len, \
 		plot_int=plot_int, dur=dur, p=2, dt=1)
+
+test(Network=N, f=f, f_out=f_out, h=h, init_trials=init_trials, snapshot_len=snapshot_len, dur=dur, dt=dt)
