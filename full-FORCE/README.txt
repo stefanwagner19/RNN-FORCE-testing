@@ -11,3 +11,4 @@ Other Files:
 Folders:
 	* trained_model - contains weights for interval matching network from training 750 trials
 	* model - storage for weights when running main_interval_matching.py
+	* snn - contains files for spiking neural network
