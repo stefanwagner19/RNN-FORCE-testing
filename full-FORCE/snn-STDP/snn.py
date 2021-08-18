@@ -1,7 +1,7 @@
 # snn.py - define spiking network for full-FORCE learning
 #
-# 	created: 8/8/2021
-#	last change: 8/17/2021
+# 	created: 8/14/2021
+#	last change: 8/14/2021
 
 
 import math
@@ -52,6 +52,8 @@ class Subnetwork(object):
 
 		# countdown for refractory period
 		self.spike_timer = np.zeros((self.N_neurons))
+		self.current_spike = np.zeros((self.N_neurons))
+		self.last_spike = np.zeros((self.N_neurons))
 
 		# keep track of number of spikes fired
 		self.spike_count = np.zeros((self.N_neurons), dtype=np.int32)
@@ -83,8 +85,20 @@ class Subnetwork(object):
 		
 		self.spikes = np.random.randint(2, size=(self.N_neurons))
 
+		self.last_spike = np.zeros((self.N_neurons))
+		self.current_spike = np.zeros((self.N_neurons))
+
 		self.r = np.zeros((self.N_neurons))
 		self.h = np.zeros((self.N_neurons))
+
+
+	def reset_spike_count(self):
+		self.spike_count = np.zeros((self.N_neurons), dtype=np.int32)
+
+
+	def reset_spike_times(self, dur):
+		self.last_spike -= dur*self.dt
+		self.current_spike -= dur*self.dt
 
 
 	def get_incoming_activities(self, t, f_out=None, h=None):
@@ -126,49 +140,41 @@ class Subnetwork(object):
 
 
 	def step(self, f, t, f_out=None, h=None):
-
 		# calculate activations caused by inputs
 		sum_f = np.sum(np.matmul(self.u_in, f[t]), 0).flatten()
 
-		''' method A '''
 
-		# calculate activations caused by feedback
-		if self.f_out:
-			sum_out = np.sum(np.matmul(self.u_out, f_out[t]), 0).flatten()
-		else:
-			sum_out = np.zeros((self.N_neurons))
+		''' attempt A '''
 
-		sum_h = np.zeros((self.N_neurons))
-
-		# calculate activations caused by hints
-		if self.hints:
-			sum_h = np.sum(np.matmul(self.u_h, h[t]), 0).flatten()
-		else:
-			sum_h = np.zeros((self.N_neurons))
-
-		self.s = self.s*math.exp(-self.dt/self.ts) + self.h*self.dt#(self.v_act*np.dot(self.J, self.r) + sum_f + sum_out + sum_h) / (self.tr*self.td)
-		self.h = self.h*math.exp(-self.dt/self.td) + (self.v_act*np.dot(self.J, self.r) + sum_f + sum_out + sum_h) / (self.tr*self.td)
-
-		# ''' method B '''
-
-		# ds = (-self.s + self.get_incoming_activities(t, f_out, h) + sum_f) / self.ts
-		# self.s += ds*self.dt
-
-		self.r = self.r*math.exp(-self.dt/self.tr) + self.hr*self.dt
-		self.hr = self.hr*math.exp(-self.dt/self.td) + self.spikes/(self.tr*self.td)
+		# update currents		
+		ds = (-self.s + self.get_incoming_activities(t, f_out, h) + sum_f) / self.ts
+		self.s += ds*self.dt
+		# self.s = self.get_incoming_activities(t, f_out, h) + sum_f
 
 		I = self.s + self.bias
 
-		self.spike_timer -= self.dt
+		# self.spike_timer -= self.dt
 
-		dv = (self.spike_timer <= 0)*(-self.v_mem + I)/self.tm
-		x = self.v_mem + self.dt*dv
+		# update membrane potentials and spikes
+		# dv = (self.spike_timer <= 0)*(-self.v_mem + I)/self.tm
+		dv = (self.current_spike <= t*self.dt-self.tr)*(-self.v_mem + I)/self.tm
+		x = self.v_mem + dv*self.dt
 
-		self.spikes = (x >= self.v_act).astype(int)#*self.v_act
-		self.spike_timer[self.spikes != 0] = self.tr
-		x[x < self.E_L] = self.E_L
+		self.spikes = (x >= self.v_act).astype(int)
+		# self.spike_timer[self.spikes != 0] = self.tr
+		self.last_spike = self.current_spike.copy()
+		self.current_spike[self.spikes != 0] = t*self.dt
+		# x[x < self.E_L] = self.E_L
+		x[x<0] = 0
 
 		self.v_mem = x + (self.E_L - x)*(x >= self.v_act)
+
+		# update firing rates
+		dr = (-self.r/self.td + self.h)
+		self.r += dr*self.dt
+
+		dh = (-self.h + self.spikes/self.td) / self.tr
+		self.h += dh*self.dt
 
 		self.spike_count += self.spikes
 
@@ -176,11 +182,24 @@ class Subnetwork(object):
 		return np.sum(np.matmul(self.w, self.r), 0)
 
 
+	def simulate(self, dur, f, f_out=None, h=None):
+		self.reset_spike_count()
+		x = np.zeros((dur, self.N_outputs, self.output_dims))
+
+		for t in range(dur):
+			x[t] = self.step(f, t, f_out=f_out, h=h)
+
+		self.reset_spike_times(dur)
+
+		return x
+
+
+
 class S_RNN(object):
 	''' Spiking RNN class for full-FORCE learning '''
-	def __init__(self, N_neurons, N_inputs, input_dims, N_outputs, output_dims, alpha, gg, gp, dt, tm_g, tm_p, td_g, \
-					td_p, tr_g, tr_p, ts_g, ts_p, E_Lg, E_Lp, v_actg, v_actp, bias_g, bias_p, var_Jg, var_Jp, mu_wg, \
-					mu_wp, var_wg, var_wp, hints=False, N_hints=None, hint_dims=None):
+	def __init__(self, N_neurons, N_inputs, input_dims, N_outputs, output_dims, alpha, eta, tp, x_offset, gg, gp, dt, \
+					tm_g, tm_p, td_g, td_p, tr_g, tr_p, ts_g, ts_p, E_Lg, E_Lp, v_actg, v_actp, bias_g, bias_p, \
+					var_Jg, var_Jp, mu_wg, mu_wp, var_wg, var_wp, hints=False, N_hints=None, hint_dims=None):
 
 		self.N_neurons = N_neurons
 		self.alpha = alpha
@@ -269,13 +288,47 @@ class S_RNN(object):
 								var_w=var_wp)
 
 
+		# parameters for STDP
+		self.eta = eta
+		self.tp = tp
+		self.x_offset = x_offset
+		self.J_max = np.max(self.Gen.J)
+		self.J_min = np.min(self.Gen.J)
+
+
 	def step(self, f, t):
 		return self.Per.step(f, t)
 
 
 	def reset_spike_count(self):
 		self.Per.spike_count = np.zeros(self.N_neurons, dtype=np.int32)
-		self.Gen.spike_count = np.zeros(self.N_neurons, dtype=np.int32) 
+		self.Gen.spike_count = np.zeros(self.N_neurons, dtype=np.int32)
+
+
+	def STDP(self, dur, f, f_out, h):
+
+		self.reset_spike_count()
+
+		dJ = np.zeros((self.N_neurons, self.N_neurons))
+
+		for t in range(dur):
+
+			# calculate updates with STDP
+			for i in range(self.N_neurons):
+				exp = np.exp((self.Gen.last_spike-self.Gen.current_spike[i]) / self.tp)
+				dJ[i,:] = self.eta * (exp-self.x_offset) * (self.J_max-self.Gen.J[i,:]) * (self.Gen.J[i,:])#-self.J_min)
+				dJ[i,i] = 0
+				dJ[self.Gen.spikes==0,:] = 0
+				dJ[self.Gen.J <= 0] = 0
+
+			# print(self.Gen.current_spike)
+
+			# update weights
+			self.Gen.J += dJ*self.dt
+
+			self.Gen.step(f, t, f_out=f_out, h=h)
+
+		self.Gen.reset_spike_times(dur)
 
 
 	def train_once(self, dur, f, f_out, h, p):
@@ -306,3 +359,6 @@ class S_RNN(object):
 
 			self.Gen.step(f, t, f_out=f_out, h=h)
 			self.Per.step(f, t)
+
+		self.Gen.reset_spike_times(dur)
+		self.Per.reset_spike_times(dur)

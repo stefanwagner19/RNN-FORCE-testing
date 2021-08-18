@@ -1,7 +1,7 @@
 # func.py - contains functions essential for training and testing functions
 #
-#	created: 7/20/2021
-#	last change: 7/29/2021
+#	created: 8/14/2021
+#	last change: 8/14/2021
 
 
 from snn import S_RNN
@@ -68,16 +68,6 @@ class Accordian(object):
 			return -np.sin(w*(self.T-x)/self.T_half)
 
 
-class Sawtooth():
-	def __init__(self, amp, T):
-		self.amp = amp
-		self.T = T
-
-	def __call__(self, t):
-		dx = 2*self.amp/(self.T-1)
-		return -self.amp + (t % self.T) * dx
-
-
 def input_spike(t):
 	if t <= 50:
 		return 2
@@ -90,18 +80,20 @@ def Cosine(t):
 	return 1.5*np.cos(2*np.pi*10*t/1000)
 
 
-def training(Network, f, f_out, h, trials, snapshot_len, plot_int, dur, p):
+def training(Network, f, f_out, h, init_trials, trials, snapshot_len, plot_int, dur, p):
 
 	print("<--- STARTING TRAINING --->\n")
 
 	Network.Gen.reset_activity()
 	Network.Per.reset_activity()
 
-	for i in range(1):
-		for t in range(dur):
+	for i in range(init_trials):
+		Network.Gen.simulate(dur, f, f_out=f_out, h=h)
+		Network.Per.simulate(dur, f)
+		# for t in range(dur):
 
-			Network.Gen.step(f, t, f_out=f_out, h=h)
-			Network.Per.step(f, t)
+		# 	Network.Gen.step(f, t, f_out=f_out, h=h)
+		# 	Network.Per.step(f, t)
 
 
 	for trial in range(trials):
@@ -109,25 +101,62 @@ def training(Network, f, f_out, h, trials, snapshot_len, plot_int, dur, p):
 		Network.train_once(dur, f, f_out, h, p)
 		print(f"--- Avg Spike-Rate: {np.mean(Network.Per.spike_count)/(dur*Network.dt)*1000} Hz")
 
-		# if trial%plot_int == 0 or trial == trials-1:
-		# 	x = np.zeros(snapshot_len)
-		# 	for t in range(0, snapshot_len):
-		# 		x[t] = Network.step(f, t)
+		if trial%plot_int == 0 or trial == trials-1:
+			# x = np.zeros(snapshot_len)
+			# for t in range(0, snapshot_len):
+			# 	x[t] = Network.step(f, t)
+			x = Network.Per.simulate(dur, f)
+			z = Network.Gen.simulate(dur, f, f_out=f_out, h=h)
 
-		# 	y = np.zeros(snapshot_len)
-		# 	for t in range(0, snapshot_len):
-		# 		y[t] = f_out[t]
+			y = np.zeros(snapshot_len)
+			for t in range(0, snapshot_len):
+				y[t] = f_out[t]
 
-		# 	z = np.zeros(snapshot_len)
-		# 	Network.Gen.w = Network.Per.w.copy()
-		# 	for t in range(0, snapshot_len):
-		# 		z[t] = Network.Gen.step(f, t, f_out, h)
+			# z = np.zeros(snapshot_len)
+			# Network.Gen.w = Network.Per.w.copy()
+			# for t in range(0, snapshot_len):
+			# 	z[t] = Network.Gen.step(f, t, f_out, h)
 
-		# 	plt.plot(x, label="output")
-		# 	plt.plot(y, label="target")
-		# 	# plt.plot(z, label="Gen")
-		# 	plt.legend(loc="upper left")
-		# 	plt.show()
+			plt.plot(x.flatten(), label="output")
+			plt.plot(y, label="target")
+			# plt.plot(z, label="Gen")
+			plt.legend(loc="upper left")
+			plt.show()
+
+
+def STDP_pre_training(Network, f, f_out, h, init_trials, trials, snapshot_len, plot_int, dur):
+	
+	print("<--- STARTING PRE-TRAINING --->\n")
+
+	Network.Gen.reset_activity()
+
+	for i in range(init_trials):
+		Network.Gen.simulate(dur, f, f_out=f_out, h=h)
+		# for t in range(dur):
+		# 	Network.Gen.step(f, t, f_out=f_out, h=h)
+
+	for trial in range(trials):
+		print(f"- Trial {trial+1}")
+		Network.STDP(dur, f, f_out, h)
+		print(f"--- Avg Spike-Rate: {np.mean(Network.Gen.spike_count)/(dur*Network.dt)*1000} Hz")
+		print(Network.Gen.J)
+
+		if trial%plot_int == 0 or trial == trials-1:
+			x = Network.Gen.simulate(dur, f, f_out=f_out, h=h)
+			# x = np.zeros(snapshot_len)
+			# for t in range(0, snapshot_len):
+			# 	x[t] = Network.Gen.step(f, t, f_out=f_out, h=h)
+
+			# Network.reset_spike_time_Gen()
+
+			y = np.zeros(snapshot_len)
+			for t in range(0, snapshot_len):
+				y[t] = f_out[t]
+
+			plt.plot(x.flatten(), label="activity")
+			plt.plot(y, label="function")
+			plt.legend(loc="upper left")
+			plt.show()
 
 
 def test(Network, f, f_out, h, init_trials, snapshot_len, dur):
@@ -135,26 +164,28 @@ def test(Network, f, f_out, h, init_trials, snapshot_len, dur):
 	Network.Per.reset_activity()
 
 	for i in range(init_trials):
-		for t in range(dur):
-			Network.Gen.step(f, t, f_out=f_out, h=h)
-			Network.Per.step(f, t)
+		Network.Gen.simulate(dur, f, f_out=f_out, h=h)
+		Network.Per.simulate(dur, f, f_out=f_out, h=h)
+		# for t in range(dur):
+		# 	Network.Gen.step(f, t, f_out=f_out, h=h)
+		# 	Network.Per.step(f, t)
 
-	x = np.zeros(snapshot_len)
+	# x = np.zeros(snapshot_len)
 	y = np.zeros(snapshot_len)
 	
 	total_error = 0
-	
-	Network.reset_spike_count()
+
+	x = Network.Per.simulate(dur, f).flatten()
 
 	for t in range(0, snapshot_len):
-		x[t] = Network.step(f, t)
+		# x[t] = Network.step(f, t)
 		y[t] = f_out[t]
 		total_error += (x[t]-y[t])**2 
 
 	print(f"-- MSE for test run : {total_error/snapshot_len} --")
 	print(f"-- Avg spike-Rate: {np.mean(Network.Per.spike_count)/(dur*Network.dt)*1000} Hz")
 
-	plt.plot(x, label="output")
+	plt.plot(x.flatten(), label="output")
 	plt.plot(y, label="target")
 	plt.legend(loc="upper left")
 	plt.show()

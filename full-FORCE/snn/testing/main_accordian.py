@@ -1,8 +1,9 @@
-# main_cosine.py - main script for learning cosine function
+# main_accordian.py - main script for learning accordian function
 #
-#	created: 8/11/2021
-#	last change: 8/18/2021
+#	created: 8/2/2021
+#	last change: 8/12/2021
 
+import sys
 
 from snn import *
 from func import *
@@ -11,9 +12,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # general network parameters
-N_neurons = 100
-dt = 0.05
-alpha = 5*dt
+N_neurons = int(sys.argv[1])
+dt = 1
+alpha = 0.08*dt
 
 N_inputs = 1
 input_dims = 1
@@ -25,7 +26,7 @@ N_hints = 0
 hint_dims = 0
 
 # parameters
-gg = gp = 1.5
+gg = gp = 10
 tm_g = tm_p = 10
 td_g = td_p = 20
 tr_g = tr_p = 2
@@ -33,19 +34,34 @@ ts_g = ts_p = 10
 E_Lg = E_Lp = 0
 v_actg = v_actp = 1
 bias_g = bias_p = v_actg
+# bias_g = bias_p = 0
 var_Jg = var_Jp = gg/np.sqrt(N_neurons)
 mu_wg = mu_wp = 0
 var_wg = var_wp = 1
 
+# task-performing parameters
+# gp = 1.5
+# tm_p = 10
+# td_p = 20
+# tr_p = 2
+# ts_p = 1
+# E_Lp = -65
+# v_actp = -40
+# bias_p = v_actp
+# # bias_p = 0
+# var_Jp = gp/np.sqrt(N_neurons)
+# mu_wp = 0
+# var_wp = 1
+
 # training parameters
-dur = 1000
+dur = 2100
 dur = int(dur/dt)
-trials = 4
+trials = 200
 
 #plotting parameters
-init_trials = 1
+init_trials = 20
 snapshot_len = dur
-plot_int = 20
+plot_int = 300
 
 
 N = S_RNN(N_neurons=N_neurons, \
@@ -81,39 +97,45 @@ N = S_RNN(N_neurons=N_neurons, \
 		N_hints=N_hints, \
 		hint_dims=hint_dims)
 
+# parameters for accordian function
+target_T = 2100
+upper = 6
+lower = 2
 
 f = np.zeros((dur, N_inputs, input_dims))
 
 for t in range(dur):
 	f[t][0][0] = input_spike(t*dt)
 
+accord = Accordian(target_T, upper, lower)
 f_out = np.zeros((dur, N_outputs, output_dims))
 
 for t in range(f_out.shape[0]):
-	f_out[t][0][0] = Cosine(t*dt)
+	f_out[t][0][0] = accord(t*dt)
 
 h = None 
 
 N.Per.reset_activity()
 N.Gen.reset_activity()
 
-x = np.zeros(snapshot_len)
-z = np.zeros(snapshot_len)
-for t in range(0, snapshot_len):
-	x[t] = N.Gen.step(f, t, f_out)
-	z[t] = N.Per.step(f, t)
+# x = np.zeros(snapshot_len)
+# z = np.zeros(snapshot_len)
+# for t in range(0, snapshot_len):
+# 	x[t] = N.Gen.step(f, t, f_out)
+# 	z[t] = N.Per.step(f, t)
 
-y = np.zeros(snapshot_len)
-for t in range(0, snapshot_len):
-	y[t] = f_out[t]
+# y = np.zeros(snapshot_len)
+# for t in range(0, snapshot_len):
+# 	y[t] = f_out[t]
 
-plt.plot(x, label="Gen")
-plt.plot(z, label="Per")
-plt.plot(y, label="target")
-plt.legend(loc="upper left")
-plt.show()
+# plt.plot(x, label="Gen")
+# plt.plot(z, label="Per")
+# plt.plot(y, label="target")
+# plt.legend(loc="upper left")
+# plt.show()
 
 training(Network=N, f=f, f_out=f_out, h=h, trials=trials, snapshot_len=snapshot_len, \
 		plot_int=plot_int, dur=dur, p=2)
 
-test(Network=N, f=f, f_out=f_out, h=h, init_trials=init_trials, snapshot_len=snapshot_len, dur=dur)
+test(Network=N, f=f, f_out=f_out, h=h, init_trials=init_trials, snapshot_len=snapshot_len, dur=dur, f_name="results\\results.txt", \
+		model_message=f"Accordian {N_neurons} Neurons, 200 Trials, 2.1 second Trial Duration", png_name=f"results\\accordian\\acc_{N_neurons}N.png")

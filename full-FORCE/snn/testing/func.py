@@ -89,6 +89,12 @@ def input_spike(t):
 def Cosine(t):
 	return 1.5*np.cos(2*np.pi*10*t/1000)
 
+def Sine(t):
+	return 1.5*np.sin(2*np.pi*10*t/1000)
+
+def ProdSine(t):
+	return 1.5*np.sin(2*np.pi*5*t/1000)*np.sin(2*np.pi*10*t/1000)
+
 
 def training(Network, f, f_out, h, trials, snapshot_len, plot_int, dur, p):
 
@@ -97,7 +103,7 @@ def training(Network, f, f_out, h, trials, snapshot_len, plot_int, dur, p):
 	Network.Gen.reset_activity()
 	Network.Per.reset_activity()
 
-	for i in range(1):
+	for i in range(5):
 		for t in range(dur):
 
 			Network.Gen.step(f, t, f_out=f_out, h=h)
@@ -130,7 +136,7 @@ def training(Network, f, f_out, h, trials, snapshot_len, plot_int, dur, p):
 		# 	plt.show()
 
 
-def test(Network, f, f_out, h, init_trials, snapshot_len, dur):
+def test(Network, f, f_out, h, init_trials, snapshot_len, dur, f_name, model_message, png_name):
 	Network.Gen.reset_activity()
 	Network.Per.reset_activity()
 
@@ -151,10 +157,11 @@ def test(Network, f, f_out, h, init_trials, snapshot_len, dur):
 		y[t] = f_out[t]
 		total_error += (x[t]-y[t])**2 
 
-	print(f"-- MSE for test run : {total_error/snapshot_len} --")
-	print(f"-- Avg spike-Rate: {np.mean(Network.Per.spike_count)/(dur*Network.dt)*1000} Hz")
+	file = open(f_name, "a")
+	file.write(f"{model_message} -- MSE = {total_error/snapshot_len}\n")
+	# print(f"-- Avg spike-Rate: {np.mean(Network.Per.spike_count)/(dur*Network.dt)*1000} Hz")
 
 	plt.plot(x, label="output")
 	plt.plot(y, label="target")
 	plt.legend(loc="upper left")
-	plt.show()
+	plt.savefig(png_name)

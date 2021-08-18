@@ -11,9 +11,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # general network parameters
-N_neurons = 600
-dt = 1
-alpha = 0.2*dt
+N_neurons = 400
+dt = 0.05
+alpha = 10*dt
 
 N_inputs = 1
 input_dims = 1
@@ -24,43 +24,28 @@ output_dims = 1
 N_hints = 0
 hint_dims = 0
 
-# target-generating parameters
-gg = 1.5
-tm_g = 10
-td_g = 20
-tr_g = 2
-ts_g = 1
-E_Lg = -65
-v_actg = -40
-bias_g = v_actg
-# bias_g = 0
-var_Jg = gg/np.sqrt(N_neurons)
-mu_wg = 0
-var_wg = 1
-
-# task-performing parameters
-gp = 1.5
-tm_p = 10
-td_p = 20
-tr_p = 2
-ts_p = 1
-E_Lp = -65
-v_actp = -40
-bias_p = v_actp
-# bias_p = 0
-var_Jp = gp/np.sqrt(N_neurons)
-mu_wp = 0
-var_wp = 1
+# parameters
+gg = gp = 1.5
+tm_g = tm_p = 10
+td_g = td_p = 20
+tr_g = tr_p = 2
+ts_g = ts_p = 10
+E_Lg = E_Lp = 0
+v_actg = v_actp = 1
+bias_g = bias_p = v_actg
+var_Jg = var_Jp = gg/np.sqrt(N_neurons)
+mu_wg = mu_wp = 0
+var_wg = var_wp = 1
 
 # training parameters
 dur = 2100
 dur = int(dur/dt)
-trials = 50
+trials = 20
 
 #plotting parameters
-init_trials = 20
+init_trials = 5
 snapshot_len = dur
-plot_int = 50
+plot_int = 300
 
 
 N = S_RNN(N_neurons=N_neurons, \
@@ -134,6 +119,6 @@ plt.legend(loc="upper left")
 plt.show()
 
 training(Network=N, f=f, f_out=f_out, h=h, trials=trials, snapshot_len=snapshot_len, \
-		plot_int=plot_int, dur=dur, p=2)
+		plot_int=plot_int, dur=dur, p=1)
 
 test(Network=N, f=f, f_out=f_out, h=h, init_trials=init_trials, snapshot_len=snapshot_len, dur=dur)

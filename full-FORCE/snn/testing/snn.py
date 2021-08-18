@@ -1,7 +1,7 @@
 # snn.py - define spiking network for full-FORCE learning
 #
 # 	created: 8/8/2021
-#	last change: 8/17/2021
+#	last change: 8/12/2021
 
 
 import math
@@ -126,51 +126,82 @@ class Subnetwork(object):
 
 
 	def step(self, f, t, f_out=None, h=None):
-
 		# calculate activations caused by inputs
 		sum_f = np.sum(np.matmul(self.u_in, f[t]), 0).flatten()
 
-		''' method A '''
 
-		# calculate activations caused by feedback
-		if self.f_out:
-			sum_out = np.sum(np.matmul(self.u_out, f_out[t]), 0).flatten()
-		else:
-			sum_out = np.zeros((self.N_neurons))
+		''' attempt A '''
 
-		sum_h = np.zeros((self.N_neurons))
-
-		# calculate activations caused by hints
-		if self.hints:
-			sum_h = np.sum(np.matmul(self.u_h, h[t]), 0).flatten()
-		else:
-			sum_h = np.zeros((self.N_neurons))
-
-		self.s = self.s*math.exp(-self.dt/self.ts) + self.h*self.dt#(self.v_act*np.dot(self.J, self.r) + sum_f + sum_out + sum_h) / (self.tr*self.td)
-		self.h = self.h*math.exp(-self.dt/self.td) + (self.v_act*np.dot(self.J, self.r) + sum_f + sum_out + sum_h) / (self.tr*self.td)
-
-		# ''' method B '''
-
-		# ds = (-self.s + self.get_incoming_activities(t, f_out, h) + sum_f) / self.ts
-		# self.s += ds*self.dt
-
-		self.r = self.r*math.exp(-self.dt/self.tr) + self.hr*self.dt
-		self.hr = self.hr*math.exp(-self.dt/self.td) + self.spikes/(self.tr*self.td)
+		# update currents		
+		ds = (-self.s + self.get_incoming_activities(t, f_out, h) + sum_f) / self.ts
+		self.s += ds*self.dt
+		# self.s = self.get_incoming_activities(t, f_out, h) + sum_f
 
 		I = self.s + self.bias
 
 		self.spike_timer -= self.dt
 
+		# update membrane potentials and spikes
 		dv = (self.spike_timer <= 0)*(-self.v_mem + I)/self.tm
-		x = self.v_mem + self.dt*dv
+		x = self.v_mem + dv*self.dt
 
 		self.spikes = (x >= self.v_act).astype(int)#*self.v_act
 		self.spike_timer[self.spikes != 0] = self.tr
-		x[x < self.E_L] = self.E_L
+		# x[x < self.E_L] = self.E_L
+		x[x<0] = 0
 
 		self.v_mem = x + (self.E_L - x)*(x >= self.v_act)
 
+		# update firing rates
+		dr = (-self.r/self.td + self.h)
+		self.r += dr*self.dt
+
+		dh = (-self.h + self.spikes/self.td) / self.tr
+		self.h += dh*self.dt
+
 		self.spike_count += self.spikes
+
+
+
+		# ''' attempt B '''
+
+		# # calculate activations caused by feedback
+		# if self.f_out:
+		# 	sum_out = np.sum(np.matmul(self.u_out, f_out[t]), 0).flatten()
+		# else:
+		# 	sum_out = np.zeros((self.N_neurons))
+
+		# sum_h = np.zeros((self.N_neurons))
+		# # calculate activations caused by hints
+		# if self.hints:
+		# 	sum_h = np.sum(np.matmul(self.u_h, h[t]), 0).flatten()
+		# else:
+		# 	sum_h = np.zeros((self.N_neurons))
+
+
+		# self.s = self.s*math.exp(-self.dt/self.tr) + self.h*self.dt
+		# self.h = math.exp(-self.dt/self.td) + self.v_act*np.dot(self.J, self.r)/(self.tr*self.td)
+
+		# self.r = self.r*math.exp(-self.dt/self.tr) + self.hr*self.dt
+		# self.hr = self.hr*math.exp(-self.dt/self.td) + self.spikes/(self.tr*self.td)
+
+		# I = self.s + sum_f + sum_out + sum_h + self.bias
+
+		# self.spike_timer -= self.dt
+
+		# dv = (self.spike_timer <= 0)*(-self.v_mem + I)/self.tm
+		# x = self.v_mem + self.dt*dv
+
+		# self.spikes = (x >= self.v_act).astype(int)#*self.v_act
+		# self.spike_timer[self.spikes != 0] = self.tr
+		# x[x < self.E_L] = self.E_L
+
+		# self.v_mem = x + (self.E_L - x)*(x >= self.v_act)
+
+		# self.r = self.r*math.exp(-self.dt/self.tr) + self.hr*self.dt
+		# self.hr = self.hr*math.exp(-self.dt/self.td) + self.spikes/(self.tr*self.td)
+
+		# self.spike_count += self.spikes
 
 
 		return np.sum(np.matmul(self.w, self.r), 0)
