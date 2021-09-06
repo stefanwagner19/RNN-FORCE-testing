@@ -1,19 +1,15 @@
-# snn.py - define spiking network for full-FORCE learning
-#
-# 	created: 8/8/2021
-#	last change: 8/17/2021
-
-
 import math
 import numpy as np
 from scipy import sparse
+import matplotlib.pyplot as plt
 
 class Subnetwork(object):
 	''' subnetwork for constructing Target-Generating and Task-Predicting network '''
-	def __init__(self, N_neurons, N_inputs, input_dims, N_outputs, output_dims, dt, tm, td, tr, ts, E_L, v_act, bias, \
-					var_J, mu_w, var_w, f_out=False, hints=False, N_hints=None, hint_dims=None):
+	def __init__(self, N_neurons, Q, N_inputs, input_dims, N_outputs, output_dims, dt, tm, td, tr, ts, E_L, v_act, \
+					bias, var_J, mu_w, var_w, f_out=False, hints=False, N_hints=None, hint_dims=None):
 
 		self.N_neurons = N_neurons
+		self.Q = Q
 
 		self.N_inputs = N_inputs
 		self.input_dims = input_dims
@@ -46,6 +42,9 @@ class Subnetwork(object):
 		self.v_mem = np.zeros((self.N_neurons))
 		self.spikes = np.zeros((self.N_neurons))
 
+		# track total voltage
+		self.v_ = np.zeros((self.N_neurons))
+
 		# set arrays for filtered firing rates
 		self.r = np.zeros((self.N_neurons))
 		self.h = np.zeros((self.N_neurons))
@@ -69,13 +68,12 @@ class Subnetwork(object):
 
 		# initialize input weights u
 		self.u_in = np.random.uniform(-1, 1, (self.input_dims, self.N_neurons, self.N_inputs))
-		# self.u_in = np.random.uniform(0, 1, (self.input_dims, self.N_neurons, self.N_inputs))	
 
 		if self.f_out:
 			self.u_out = np.random.uniform(-1, 1, (self.output_dims, self.N_neurons, self.N_outputs))
-			if self.N_hints != None:
+
+			if self.hints:
 				self.u_h = np.random.uniform(-1, 1, (self.hint_dims, self.N_neurons, self.N_hints))
-				# self.u_h = np.random.uniform(0, 1, (self.hint_dims, self.N_neurons, self.N_hints))
 
 
 	def reset_activity(self):
@@ -83,11 +81,13 @@ class Subnetwork(object):
 		
 		self.spikes = np.random.randint(2, size=(self.N_neurons))
 
-		self.r = np.zeros((self.N_neurons))
+		self.s = np.zeros((self.N_neurons))
 		self.h = np.zeros((self.N_neurons))
+		self.r = np.zeros((self.N_neurons))
+		self.hr = np.zeros((self.N_neurons))
 
 
-	def get_incoming_activities(self, t, f_out=None, h=None):
+	def get_incoming_currents(self, t, f_out=None, h=None):
 		''' calculate part of the activities '''
 
 		# calculate activations caused by feedback
@@ -103,26 +103,7 @@ class Subnetwork(object):
 		else:
 			sum_h = np.zeros((self.N_neurons))
 
-		return self.v_act*np.dot(self.J, self.r) + sum_out + sum_h 
-
-
-	def get_error_term(self, t, f_out=None, h=None):
-		''' calculate part of the error term for training '''
-
-		# calculate activations caused by feedback
-		if self.f_out:
-			sum_out = np.sum(np.matmul(self.u_out, f_out[t]), 0).flatten()
-		else:
-			sum_out = np.zeros((self.N_neurons))
-
-		sum_h = np.zeros((self.N_neurons))
-		# calculate activations caused by hints
-		if self.hints:
-			sum_h = np.sum(np.matmul(self.u_h, h[t]), 0).flatten()
-		else:
-			sum_h = np.zeros((self.N_neurons))
-
-		return np.dot(self.J, self.r) + sum_out + sum_h 
+		return np.dot(self.J, self.r*self.dt) + (sum_out + sum_h)*self.Q
 
 
 	def step(self, f, t, f_out=None, h=None):
@@ -130,41 +111,27 @@ class Subnetwork(object):
 		# calculate activations caused by inputs
 		sum_f = np.sum(np.matmul(self.u_in, f[t]), 0).flatten()
 
-		''' method A '''
+		# double exponential filter for synaptic current
+		self.s = self.s*math.exp(-self.dt/self.tr) + self.h*self.dt
+		self.h = self.h*math.exp(-self.dt/self.td) + (self.get_incoming_currents(t, f_out, h) + sum_f) / (self.tr*self.td)
 
-		# calculate activations caused by feedback
-		if self.f_out:
-			sum_out = np.sum(np.matmul(self.u_out, f_out[t]), 0).flatten()
-		else:
-			sum_out = np.zeros((self.N_neurons))
-
-		sum_h = np.zeros((self.N_neurons))
-
-		# calculate activations caused by hints
-		if self.hints:
-			sum_h = np.sum(np.matmul(self.u_h, h[t]), 0).flatten()
-		else:
-			sum_h = np.zeros((self.N_neurons))
-
-		self.s = self.s*math.exp(-self.dt/self.ts) + self.h*self.dt#(self.v_act*np.dot(self.J, self.r) + sum_f + sum_out + sum_h) / (self.tr*self.td)
-		self.h = self.h*math.exp(-self.dt/self.td) + (self.v_act*np.dot(self.J, self.r) + sum_f + sum_out + sum_h) / (self.tr*self.td)
-
-		# ''' method B '''
-
-		# ds = (-self.s + self.get_incoming_activities(t, f_out, h) + sum_f) / self.ts
-		# self.s += ds*self.dt
-
+		# double exponential filter for firing rate
 		self.r = self.r*math.exp(-self.dt/self.tr) + self.hr*self.dt
 		self.hr = self.hr*math.exp(-self.dt/self.td) + self.spikes/(self.tr*self.td)
 
+		# update current
 		I = self.s + self.bias
 
+		# update spike timer for refractory period
 		self.spike_timer -= self.dt
 
+		# update voltage and spikes
 		dv = (self.spike_timer <= 0)*(-self.v_mem + I)/self.tm
 		x = self.v_mem + self.dt*dv
 
-		self.spikes = (x >= self.v_act).astype(int)#*self.v_act
+		self.v_ += x - self.v_mem
+
+		self.spikes = (x >= self.v_act).astype(int)
 		self.spike_timer[self.spikes != 0] = self.tr
 		x[x < self.E_L] = self.E_L
 
@@ -173,14 +140,14 @@ class Subnetwork(object):
 		self.spike_count += self.spikes
 
 
-		return np.sum(np.matmul(self.w, self.r), 0)
+		return np.sum(np.matmul(self.w, self.r*self.dt), 0)
 
 
 class S_RNN(object):
 	''' Spiking RNN class for full-FORCE learning '''
-	def __init__(self, N_neurons, N_inputs, input_dims, N_outputs, output_dims, alpha, gg, gp, dt, tm_g, tm_p, td_g, \
-					td_p, tr_g, tr_p, ts_g, ts_p, E_Lg, E_Lp, v_actg, v_actp, bias_g, bias_p, var_Jg, var_Jp, mu_wg, \
-					mu_wp, var_wg, var_wp, hints=False, N_hints=None, hint_dims=None):
+	def __init__(self, N_neurons, N_inputs, input_dims, N_outputs, output_dims, alpha, gg, gp, Qg, Qp, dt, tm_g, tm_p, \
+					td_g, td_p, tr_g, tr_p, ts_g, ts_p, E_Lg, E_Lp, v_actg, v_actp, bias_g, bias_p, var_Jg, var_Jp, \
+					mu_wg, mu_wp, var_wg, var_wp, hints=False, N_hints=None, hint_dims=None):
 
 		self.N_neurons = N_neurons
 		self.alpha = alpha
@@ -199,6 +166,7 @@ class S_RNN(object):
 
 		# target-generating network parameters
 		self.gg = gg
+		self.Qg = Qg
 		self.tm_g = tm_g
 		self.td_g = td_g
 		self.tr_g = tr_g
@@ -212,6 +180,7 @@ class S_RNN(object):
 
 		# task-performing network parameters
 		self.gp = gp
+		self.Qp = Qp
 		self.tm_p = tm_p
 		self.td_p = td_p
 		self.tr_p = tr_p
@@ -230,6 +199,7 @@ class S_RNN(object):
 
 		# target-generating network
 		self.Gen = Subnetwork(N_neurons=N_neurons, \
+								Q=Qg, \
 								N_inputs=N_inputs, \
 								input_dims=input_dims, \
 								N_outputs=N_outputs, \
@@ -252,6 +222,7 @@ class S_RNN(object):
 
 		# task-performing network
 		self.Per = Subnetwork(N_neurons=N_neurons, \
+								Q=Qp, \
 								N_inputs=N_inputs, \
 								input_dims=input_dims, \
 								N_outputs=N_outputs, \
@@ -287,22 +258,21 @@ class S_RNN(object):
 			if np.random.rand() < (1/p):
 			
 				''' RLS algorithm '''
-				J_err = self.Per.get_error_term(t) - self.Gen.get_error_term(t, f_out=f_out, h=h)
-
-				w_err = np.sum(np.matmul(self.Per.w, self.Per.r), 0) - f_out[t]
-
-				# update correlation matrix
-				denom = 1 + np.matmul(np.transpose(self.Per.r), np.matmul(self.P, self.Per.r))
-				dPdt = -1 * np.outer(np.dot(self.P, self.Per.r), np.dot(np.transpose(self.Per.r), self.P)) / denom
-				self.P += dPdt*self.dt
+				J_err = (self.Per.get_incoming_currents(t) - self.Gen.get_incoming_currents(t, f_out=f_out, h=h))
+				w_err = np.sum(np.matmul(self.Per.w, self.Per.r*self.dt), 0) - f_out[t]
 
 				# update internal weights
-				dJdt = -1 * np.matmul(np.transpose(np.expand_dims(J_err, 0)), np.expand_dims(np.matmul(self.P, self.Per.r), 0)) 
-				self.Per.J += dJdt*self.dt
+				dJdt = -1 * np.matmul(np.transpose(np.expand_dims(J_err, 0)), np.expand_dims(np.matmul(self.P, self.Per.r*self.dt), 0)) 
+				self.Per.J += dJdt
 
 				# update output weights
-				dwdt = -1 * np.sum(np.matmul(np.transpose(w_err), np.expand_dims(np.matmul(self.P, self.Per.r), 0)), 0)
-				self.Per.w += dwdt*self.dt
+				dwdt = -1 * np.sum(np.matmul(np.transpose(w_err), np.expand_dims(np.matmul(self.P, self.Per.r*self.dt), 0)), 0)
+				self.Per.w += dwdt
+
+				# update correlation matrix
+				denom = 1 + np.matmul(np.transpose(self.Per.r*self.dt), np.matmul(self.P, self.Per.r*self.dt))
+				dPdt = -1 * np.outer(np.dot(self.P, self.Per.r*self.dt), np.dot(np.transpose(self.Per.r*self.dt), self.P)) / denom
+				self.P += dPdt
 
 			self.Gen.step(f, t, f_out=f_out, h=h)
 			self.Per.step(f, t)

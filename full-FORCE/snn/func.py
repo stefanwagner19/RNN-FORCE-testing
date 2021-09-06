@@ -1,29 +1,12 @@
-# func.py - contains functions essential for training and testing functions
-#
-#	created: 7/20/2021
-#	last change: 7/29/2021
-
-
 from snn import S_RNN
 
 import numpy as np
+from scipy.stats import beta
 import matplotlib.pyplot as plt
 
 
-class IntMatchFunc(object):
-	def __init__(self, spiketime):
-		self.spike = spiketime
-		self.std = 60
-
-	def __call__(self, x):
-		if abs(x - self.spike) < 300:
-			return 225/(self.std*np.sqrt(2*np.pi))*np.exp(-(x-self.spike)**2/ \
-				(2*self.std**2))
-		else:
-			return 0
-
 class IntMatchInput(object):
-	def __init__(self, spiketime, dur):
+	def __init__(self, spiketime, dur, dt):
 		self.spiketime = spiketime
 		self.dur = dur
 
@@ -35,11 +18,21 @@ class IntMatchInput(object):
 		else:
 			return 1
 
+def create_beta(a, b, spike, end, dt):
+	end = round(end/dt)
+	spike = round(spike/dt)
+	x = np.zeros((end, 1, 1))
+	
+	y = np.linspace(beta.ppf(0, a, b), beta.ppf(1, a, b), round(0.5/dt))
+	x[spike-round(0.25/dt):spike+round(0.25/dt), 0, 0] = beta.pdf(y, a, b)
+
+	return x
+
 
 class Hint(object):
 	def __init__(self, spiketime):
 		self.spike = spiketime
-		self.dx = 1/1000
+		self.dx = 1
 
 	def __call__(self, x):
 		if x <= self.spike:
@@ -68,26 +61,11 @@ class Accordian(object):
 			return -np.sin(w*(self.T-x)/self.T_half)
 
 
-class Sawtooth():
-	def __init__(self, amp, T):
-		self.amp = amp
-		self.T = T
-
-	def __call__(self, t):
-		dx = 2*self.amp/(self.T-1)
-		return -self.amp + (t % self.T) * dx
-
-
 def input_spike(t):
-	if t <= 50:
-		return 2
+	if t <= 0.05:
+		return 0.2
 	else:
 		return 0
-	# return 2
-
-
-def Cosine(t):
-	return 1.5*np.cos(2*np.pi*10*t/1000)
 
 
 def training(Network, f, f_out, h, trials, snapshot_len, plot_int, dur, p):
@@ -107,9 +85,12 @@ def training(Network, f, f_out, h, trials, snapshot_len, plot_int, dur, p):
 	for trial in range(trials):
 		print(f"- Trial {trial+1} -")
 		Network.train_once(dur, f, f_out, h, p)
-		print(f"--- Avg Spike-Rate: {np.mean(Network.Per.spike_count)/(dur*Network.dt)*1000} Hz")
+		print(f"--- Avg Spike-Rate: {np.mean(Network.Per.spike_count)/(dur*Network.dt)} Hz")
 
 		# if trial%plot_int == 0 or trial == trials-1:
+
+		# 	Network.Gen.w = Network.Per.w
+
 		# 	x = np.zeros(snapshot_len)
 		# 	for t in range(0, snapshot_len):
 		# 		x[t] = Network.step(f, t)
@@ -125,7 +106,7 @@ def training(Network, f, f_out, h, trials, snapshot_len, plot_int, dur, p):
 
 		# 	plt.plot(x, label="output")
 		# 	plt.plot(y, label="target")
-		# 	# plt.plot(z, label="Gen")
+		# 	plt.plot(z, label="Gen")
 		# 	plt.legend(loc="upper left")
 		# 	plt.show()
 
@@ -152,7 +133,7 @@ def test(Network, f, f_out, h, init_trials, snapshot_len, dur):
 		total_error += (x[t]-y[t])**2 
 
 	print(f"-- MSE for test run : {total_error/snapshot_len} --")
-	print(f"-- Avg spike-Rate: {np.mean(Network.Per.spike_count)/(dur*Network.dt)*1000} Hz")
+	print(f"-- Avg spike-Rate: {np.mean(Network.Per.spike_count)/(dur*Network.dt)} Hz")
 
 	plt.plot(x, label="output")
 	plt.plot(y, label="target")
