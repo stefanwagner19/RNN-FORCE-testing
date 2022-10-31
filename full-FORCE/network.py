@@ -7,6 +7,8 @@
 import numpy as np
 from scipy import sparse
 
+import matplotlib.pyplot as plt
+
 
 class Subnetwork(object):
 	''' subnetwork for constructing Target-Generating and Task-Predicting network '''
@@ -144,19 +146,26 @@ class RNN(object):
 
 	def train_once(self, dur, f, f_out, h, p, dt):
 
+		x = np.zeros(dur)
+		y = np.zeros(dur)
+
+		W = self.Per.w
+
 		for t in range(dur):
 
 			if np.random.rand() < (1/p):
 			
 				''' RLS algorithm '''
-				J_err = self.Per.get_error_term(t) - self.Gen.get_error_term(t, f_out=f_out, h=h)
+				J_err = (self.Per.get_error_term(t) - self.Gen.get_error_term(t, f_out=f_out, h=h))
 
-				w_err = np.sum(np.matmul(self.Per.w, self.Per.r), 0) - f_out[t]
+				w_err = (np.sum(np.matmul(self.Per.w, self.Per.r), 0) - f_out[t])
 
 				# update correlation matrix
 				denom = 1 + np.matmul(np.transpose(self.Per.r), np.matmul(self.P, self.Per.r))
 				dPdt = -1 * np.outer(np.dot(self.P, self.Per.r), np.dot(np.transpose(self.Per.r), self.P)) / denom
 				self.P += dPdt*dt
+
+				print(self.P[0][0])
 
 				# update internal weights
 				dJdt = -1 * np.matmul(np.transpose(np.expand_dims(J_err, 0)), np.expand_dims(np.matmul(self.P, self.Per.r), 0)) 
@@ -166,5 +175,13 @@ class RNN(object):
 				dwdt = -1 * np.sum(np.matmul(np.transpose(w_err), np.expand_dims(np.matmul(self.P, self.Per.r), 0)), 0)
 				self.Per.w += dwdt*dt
 
+			x[t] = np.matmul(W, self.Per.r).flatten()
+			y[t] = np.matmul(W, self.Gen.r).flatten()
+
 			self.Gen.step(f, t, f_out=f_out, h=h, dt=dt)
 			self.Per.step(f, t, dt=dt)
+
+		plt.plot(x, label="Per")
+		plt.plot(y, label="Gen")
+		plt.legend(loc="upper left")
+		plt.show()

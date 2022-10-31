@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 # general network parameters
 N_neurons = 100
-alpha = 1
+alpha = 0.1
 dt = 1
 
 N_inputs = 1
@@ -40,7 +40,7 @@ var_wp = 1
 
 # training parameters
 dur = 1200
-trials = 20
+trials = 5
 
 #plotting parameters
 init_trials = 5
@@ -83,6 +83,6 @@ for t in range(f_out.shape[0]):
 h = None 
 
 training(Network=N, f=f, f_out=f_out, h=h, trials=trials, snapshot_len=snapshot_len, \
-		plot_int=plot_int, dur=dur, p=2, dt=1)
+		plot_int=plot_int, dur=dur, p=3, dt=1)
 
 test(Network=N, f=f, f_out=f_out, h=h, init_trials=init_trials, snapshot_len=snapshot_len, dur=dur, dt=dt)

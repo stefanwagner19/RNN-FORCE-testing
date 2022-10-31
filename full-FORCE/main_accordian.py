@@ -40,10 +40,10 @@ var_wp = 1
 
 # training parameters
 dur =2100
-trials = 100
+trials = 15
 
 #plotting parameters
-init_trials = 20
+init_trials = 2
 snapshot_len = 2100
 plot_int = 100
 

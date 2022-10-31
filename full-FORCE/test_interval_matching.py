@@ -148,6 +148,6 @@ N = RNN(N_neurons=N_neurons, \
 		hint_dims=hint_dims)
 
 spiketimes = [700, 750, 800, 850, 900, 950, 1000]
-trial_num = 750
+trial_num = 300#750
 
 test(N, init_trials, spike_interval_upper, spike_interval_lower, trial_num, spiketimes, mu_pause)
